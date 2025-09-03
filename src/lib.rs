@@ -221,13 +221,15 @@ impl NexSh {
                         }
                         CommandResult::Error(error) => {
                             // Get AI explanation for the error
-                            self.progress_manager
+                            let _pb = self
+                                .progress_manager
                                 .create_spinner("Requesting explanation ...".blue().to_string());
                             if let Ok(explanation) = self
                                 .ai_client
                                 .get_command_explanation(&response.command, &error)
                                 .await
                             {
+                                _pb.finish_and_clear();
                                 println!(
                                     "{} {}",
                                     "🤖 AI Explanation:".green(),

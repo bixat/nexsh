@@ -23,7 +23,9 @@ impl CommandExecutor {
             .create_spinner("Running command...".green().to_string());
 
         let result = self.run_shell_command(command);
-        pb.finish_and_clear();
+        if result.is_ok() {
+            pb.finish_and_clear();
+        }
 
         match result {
             Ok(output) => Ok(CommandResult::Success(output)),
