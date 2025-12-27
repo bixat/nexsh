@@ -5,6 +5,8 @@
 
 # NexSh 🤖
 
+<img src="./logo.png" alt="support-palestine-banner">
+
 [![Crates.io](https://img.shields.io/crates/v/nexsh.svg)](https://crates.io/crates/nexsh)
 ![Downloads](https://img.shields.io/crates/d/nexsh.svg)
 ![Size](https://img.shields.io/crates/size/nexsh)

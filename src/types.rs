@@ -22,3 +22,15 @@ pub struct GeminiResponse {
     pub dangerous: bool,
     pub category: String,
 }
+
+#[derive(Debug)]
+pub enum CommandResult {
+    Success(String),
+    Error(String),
+}
+
+#[derive(Debug)]
+pub struct ExecutionContext {
+    pub working_dir: String,
+    pub environment: std::collections::HashMap<String, String>,
+}

@@ -21,16 +21,27 @@ struct Args {
 async fn main() -> Result<(), Box<dyn Error>> {
     header::print_header();
 
-    let args = Args::parse();
-    let mut shell = NexSh::new()?;
+    let args = parse_arguments();
+    let mut shell = initialize_shell()?;
 
     if let Some(cmd) = args.execute {
-        if cmd == "--help" || cmd == "-h" {
-            shell.print_help()?;
-            return Ok(());
-        }
-        return shell.process_command(&cmd).await;
+        return handle_execute_command(cmd, &mut shell).await;
     }
-
     shell.run().await
+}
+
+fn parse_arguments() -> Args {
+    Args::parse()
+}
+
+fn initialize_shell() -> Result<NexSh, Box<dyn Error>> {
+    NexSh::new()
+}
+
+async fn handle_execute_command(cmd: String, shell: &mut NexSh) -> Result<(), Box<dyn Error>> {
+    if cmd == "--help" || cmd == "-h" {
+        shell.print_help()?;
+        return Ok(());
+    }
+    shell.process_command(&cmd).await
 }
