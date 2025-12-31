@@ -8,7 +8,9 @@ use crate::{
     command_executor::CommandExecutor,
     config_manager::ConfigManager,
     context_manager::ContextManager,
-    types::{CommandResult, Message, NexShConfig},
+    migration::MigrationManager,
+    react_loop::ReActLoop,
+    types::{Message, NexShConfig},
     ui_progress::ProgressManager,
     ui_prompt_builder::PromptBuilder,
 };
@@ -20,7 +22,10 @@ pub mod available_models;
 pub mod command_executor;
 pub mod config_manager;
 pub mod context_manager;
+pub mod migration;
 pub mod prompt;
+pub mod react_agent;
+pub mod react_loop;
 pub mod types;
 pub mod ui_progress;
 pub mod ui_prompt_builder;
@@ -31,7 +36,8 @@ impl Default for NexShConfig {
             api_key: String::new(),
             history_size: 1000,
             max_context_messages: 100,
-            model: Some("gemini-2.0-flash".to_string()),
+            model: Some("anthropic/claude-sonnet-4".to_string()),
+            verbose: false,
         }
     }
 }
@@ -42,20 +48,27 @@ pub struct NexSh {
     command_executor: CommandExecutor,
     context_manager: ContextManager,
     progress_manager: ProgressManager,
+    react_loop: ReActLoop,
     messages: Vec<Message>,
     editor: DefaultEditor,
 }
 
 impl NexSh {
     pub fn new() -> Result<Self, Box<dyn Error>> {
+        // Run migrations first
+        let migration_manager = MigrationManager::new()?;
+        if let Err(e) = migration_manager.run_migrations() {
+            eprintln!("Warning: Migration failed: {}", e);
+        }
+
         let config_manager = ConfigManager::new()?;
         let editor = config_manager.create_editor()?;
 
-        // Initialize AI client with config
+        // Initialize AI client with config (allow empty API key for first-time setup)
         let ai_client = AIClient::new(
             config_manager.config.api_key.clone(),
             config_manager.config.model.clone(),
-        );
+        )?;
 
         // Initialize context manager
         let context_manager = ContextManager::new(
@@ -72,6 +85,7 @@ impl NexSh {
             command_executor: CommandExecutor::new(),
             context_manager,
             progress_manager: ProgressManager::new(),
+            react_loop: ReActLoop::default(),
             messages,
             editor,
         })
@@ -86,7 +100,7 @@ impl NexSh {
         // Update AI client
         self.ai_client.set_model(model.to_string());
 
-        println!("✅ Gemini model set to: {}", model.green());
+        println!("✅ AI model set to: {}", model.green());
         Ok(())
     }
 
@@ -96,7 +110,7 @@ impl NexSh {
         // Get API key
         let input = self
             .editor
-            .readline("Enter your Gemini API key (leave blank to keep current if exists): ")?;
+            .readline("Enter your OpenRouter API key (leave blank to keep current if exists): ")?;
         let api_key = input.trim();
         if !api_key.is_empty() {
             self.config_manager.update_config(|config| {
@@ -125,33 +139,106 @@ impl NexSh {
             }
         }
 
-        // Model selection
-        let models = list_available_models();
-        println!("Available Gemini models:");
-        for (i, m) in models.iter().enumerate() {
-            println!("  {}. {}", i + 1, m);
+        // Verbose mode setting
+        if let Ok(input) = self
+            .editor
+            .readline("Enable verbose mode to show all thoughts and actions? (y/N): ")
+        {
+            let enable_verbose = matches!(input.trim().to_lowercase().as_str(), "y" | "yes");
+            self.config_manager.update_config(|config| {
+                config.verbose = enable_verbose;
+            })?;
+            if enable_verbose {
+                println!("{}", "✅ Verbose mode enabled".green());
+            } else {
+                println!("{}", "✅ Verbose mode disabled (default)".green());
+            }
         }
 
-        let input = self
+        // Model selection using presets
+        println!("\n{}", "📋 Model Selection".cyan().bold());
+        println!("Choose a preset:");
+        println!("  1. Free models (recommended for getting started)");
+        println!("  2. Programming models (optimized for code)");
+        println!("  3. Reasoning models (advanced problem-solving)");
+        println!();
+
+        let preset_choice = self
             .editor
-            .readline("Select Gemini model by number or name (default 1): ")?;
-        let model = input.trim();
-        let selected = if model.is_empty() {
-            models[0]
-        } else if let Ok(idx) = model.parse::<usize>() {
-            models
-                .get(idx.saturating_sub(1))
-                .copied()
-                .unwrap_or(models[0])
-        } else {
-            models
-                .iter()
-                .find(|m| m.starts_with(model))
-                .copied()
-                .unwrap_or(models[0])
+            .readline("Select preset (1-3, default 1): ")
+            .unwrap_or_default();
+
+        let preset = match preset_choice.trim() {
+            "2" => "programming",
+            "3" => "reasoning",
+            _ => "free", // Default to free models
         };
 
-        self.set_model(selected)?;
+        let models = crate::available_models::get_preset_models(preset);
+
+        if models.is_empty() {
+            // Fallback to static list if preset returns empty
+            println!("{}", "⚠️  Using fallback model list".yellow());
+            let fallback_models = list_available_models();
+            println!("\nAvailable AI models:");
+            for (i, m) in fallback_models.iter().enumerate() {
+                let display = if m.contains(":free") {
+                    format!("{}. {} {}", i + 1, m, "🆓".green())
+                } else {
+                    format!("{}. {}", i + 1, m)
+                };
+                println!("  {}", display);
+            }
+
+            let input = self
+                .editor
+                .readline("Select AI model by number or name (default 1): ")?;
+            let model = input.trim();
+            let selected = if model.is_empty() {
+                fallback_models[0]
+            } else if let Ok(idx) = model.parse::<usize>() {
+                fallback_models
+                    .get(idx.saturating_sub(1))
+                    .copied()
+                    .unwrap_or(fallback_models[0])
+            } else {
+                fallback_models
+                    .iter()
+                    .find(|m| m.starts_with(model))
+                    .copied()
+                    .unwrap_or(fallback_models[0])
+            };
+            self.set_model(selected)?;
+        } else {
+            println!("\n{} {}", "📦 Preset:".cyan().bold(), preset.green());
+            for (i, model) in models.iter().enumerate() {
+                println!("  {}. {}", i + 1, model.cyan());
+            }
+
+            let input = self
+                .editor
+                .readline("Select model by number (default 1): ")?;
+            let selection = input.trim();
+
+            let selected = if selection.is_empty() {
+                &models[0]
+            } else if let Ok(idx) = selection.parse::<usize>() {
+                models.get(idx.saturating_sub(1)).unwrap_or(&models[0])
+            } else {
+                &models[0]
+            };
+
+            self.set_model(selected)?;
+        }
+
+        // Reinitialize AI client with new API key
+        if !self.config_manager.config.api_key.is_empty() {
+            self.ai_client = AIClient::new(
+                self.config_manager.config.api_key.clone(),
+                self.config_manager.config.model.clone(),
+            )?;
+        }
+
         println!("✅ Configuration saved successfully!");
         Ok(())
     }
@@ -166,80 +253,101 @@ impl NexSh {
             .add_message(&mut self.messages, "user", input)?;
 
         // Create progress indicator
-        let pb = self
-            .progress_manager
-            .create_spinner("Thinking...".yellow().to_string());
+        let pb = if self.config_manager.config.verbose {
+            self.progress_manager
+                .create_spinner("🔄 Starting ReAct loop...".cyan().to_string())
+        } else {
+            self.progress_manager
+                .create_spinner("💭 Thinking...".cyan().to_string())
+        };
 
-        // Process command with AI client
-        match self
-            .ai_client
-            .process_command_request(input, &self.messages)
-            .await
-        {
-            Ok(response) => {
-                pb.finish_and_clear();
+        // Run the ReAct loop (multiple iterations of Think → Act → Observe)
+        let result = self
+            .react_loop
+            .run(
+                &self.ai_client,
+                &self.command_executor,
+                &self.messages,
+                input,
+            )
+            .await;
 
-                println!("{} {}", "🤖 →".green(), response.message.yellow());
+        // Finish spinner before displaying results
+        pb.finish_and_clear();
 
-                if response.command.is_empty() {
-                    // Add model response to context
-                    self.context_manager.add_message(
-                        &mut self.messages,
-                        "model",
-                        &response.message,
-                    )?;
-                    return Ok(());
-                }
+        match result {
+            Ok(steps) => {
+                // In verbose mode, show all steps with full details
+                if self.config_manager.config.verbose {
+                    for (i, step) in steps.iter().enumerate() {
+                        println!("\n{} {}", "🔄 Iteration".cyan().bold(), i + 1);
+                        println!("{} {}", "💭 Thought:".yellow(), step.thought.reasoning);
 
-                // Add command to history
-                self.editor.add_history_entry(&response.command)?;
-
-                println!("{} {}", "Category :".green(), response.category.yellow());
-                println!("{} {}", "→".blue(), response.command);
-
-                // Add model response to context
-                self.context_manager.add_message(
-                    &mut self.messages,
-                    "model",
-                    &format!(
-                        "Command: {}, message: {}",
-                        response.command, response.message
-                    ),
-                )?;
-
-                // Execute command if not dangerous or user confirms
-                if !response.dangerous || self.confirm_execution()? {
-                    match self.command_executor.execute(&response.command)? {
-                        CommandResult::Success(output) => {
-                            if !output.is_empty() {
-                                self.context_manager.add_message(
-                                    &mut self.messages,
-                                    "model",
-                                    &format!("Command output:\n{}", output),
-                                )?;
-                            }
+                        if !step.action.command.is_empty() {
+                            println!("{} {}", "⚡ Action:".green(), step.action.command);
                         }
-                        CommandResult::Error(error) => {
-                            // Get AI explanation for the error
-                            let _pb = self
-                                .progress_manager
-                                .create_spinner("Requesting explanation ...".blue().to_string());
-                            if let Ok(explanation) = self
-                                .ai_client
-                                .get_command_explanation(&response.command, &error)
-                                .await
-                            {
-                                _pb.finish_and_clear();
-                                println!(
-                                    "{} {}",
-                                    "🤖 AI Explanation:".green(),
-                                    explanation.yellow()
-                                );
+
+                        if let Some(obs) = &step.observation {
+                            if obs.success {
+                                println!("{} {}", "👁️  Observation:".blue(), obs.result);
+                            } else if let Some(error) = &obs.error {
+                                println!("{} {}", "❌ Error:".red(), error);
                             }
                         }
                     }
+                    println!("\n{} Completed {} iterations", "✅".green(), steps.len());
                 } else {
-                    println!("Command execution cancelled.");
+                    // In non-verbose mode, show only the final thought and answer
+                    if let Some(last_step) = steps.last() {
+                        println!("\n{} {}", "💭".yellow(), last_step.thought.reasoning);
+
+                        if let Some(obs) = &last_step.observation {
+                            if obs.success && !obs.result.is_empty() {
+                                println!("\n{} {}", "🤖".green().bold(), obs.result);
+                            } else if let Some(error) = &obs.error {
+                                eprintln!("\n{} {}", "❌ Error:".red(), error);
+                            }
+                        }
+                    }
+                }
+
+                // Save all steps to context (regardless of verbose mode)
+                for step in &steps {
+                    // Add thought to context
+                    self.context_manager.add_message(
+                        &mut self.messages,
+                        "assistant",
+                        &format!("Thought: {}", step.thought.reasoning),
+                    )?;
+
+                    // Add action to context
+                    if !step.action.command.is_empty() {
+                        self.context_manager.add_message(
+                            &mut self.messages,
+                            "assistant",
+                            &format!("Action: {}", step.action.command),
+                        )?;
+
+                        // Add command to shell history
+                        self.editor.add_history_entry(&step.action.command)?;
+                    }
+
+                    // Add observation to context
+                    if let Some(obs) = &step.observation {
+                        if obs.success {
+                            self.context_manager.add_message(
+                                &mut self.messages,
+                                "assistant",
+                                &format!("Observation: {}", obs.result),
+                            )?;
+                        } else if let Some(error) = &obs.error {
+                            self.context_manager.add_message(
+                                &mut self.messages,
+                                "assistant",
+                                &format!("Error: {}", error),
+                            )?;
+                        }
+                    }
                 }
             }
             Err(e) => {
@@ -249,22 +357,6 @@ impl NexSh {
         }
 
         Ok(())
-    }
-
-    fn confirm_execution(&mut self) -> Result<bool, Box<dyn Error>> {
-        let _input = self
-            .editor
-            .readline(&PromptBuilder::create_simple_confirmation())?;
-
-        if _input.trim().to_lowercase() == "n" {
-            return Ok(false);
-        }
-
-        let _input = self
-            .editor
-            .readline(&PromptBuilder::create_danger_confirmation())?;
-
-        Ok(_input.trim().to_lowercase() == "y")
     }
 
     fn clear_context(&mut self) -> Result<(), Box<dyn Error>> {
@@ -279,39 +371,209 @@ impl NexSh {
         println!("  - Type any command to execute it.");
         println!("  - Use 'init' to set up your API key.");
         println!("  - Use 'clear' to clear conversation context.");
-        println!("  - Type 'models' to list and select available Gemini models interactively.");
+        println!("  - Type 'models' to browse all models or select from presets (programming, reasoning, free).");
+        println!("  - Use 'verbose' or 'verbose on' to show all thoughts and actions.");
+        println!("  - Use 'verbose off' to show only final answers (default).");
+        println!("  - NexSh uses ReAct (Reasoning and Acting) pattern for intelligent command generation.");
+
+        let verbose_status = if self.config_manager.config.verbose {
+            "enabled".green()
+        } else {
+            "disabled".yellow()
+        };
+        println!(
+            "\n{} Verbose mode is currently {}",
+            "ℹ️".cyan(),
+            verbose_status
+        );
+
         Ok(())
     }
 
-    fn handle_model_selection(&mut self) -> Result<(), Box<dyn Error>> {
-        let models = list_available_models();
-        println!("Available Gemini models:");
-        for (i, m) in models.iter().enumerate() {
-            println!("  {}. {}", i + 1, m);
+    fn select_from_preset_models(
+        &mut self,
+        preset_name: &str,
+        models: Vec<String>,
+    ) -> Result<(), Box<dyn Error>> {
+        if models.is_empty() {
+            println!("{}", "⚠️  No models found for this preset".yellow());
+            return Ok(());
+        }
+
+        println!("\n{} {}", "📦 Preset:".cyan().bold(), preset_name.green());
+        for (i, model) in models.iter().enumerate() {
+            println!("  {}. {}", i + 1, model.cyan());
         }
 
         let input = self
             .editor
-            .readline("Select model by number or name (Enter to cancel): ")
+            .readline("Select model by number (Enter to cancel): ")
             .unwrap_or_default();
-        let model = input.trim();
+        let selection = input.trim();
 
-        if !model.is_empty() {
-            let selected = if let Ok(idx) = model.parse::<usize>() {
-                models
-                    .get(idx.saturating_sub(1))
-                    .copied()
-                    .unwrap_or(models[0])
+        if !selection.is_empty() {
+            if let Ok(idx) = selection.parse::<usize>() {
+                if let Some(model) = models.get(idx.saturating_sub(1)) {
+                    self.set_model(model)?;
+                } else {
+                    eprintln!("{} Invalid selection", "error:".red());
+                }
             } else {
-                models
-                    .iter()
-                    .find(|m| m.starts_with(model))
-                    .copied()
-                    .unwrap_or(models[0])
-            };
+                eprintln!("{} Please enter a number", "error:".red());
+            }
+        }
 
-            if let Err(e) = self.set_model(selected) {
-                eprintln!("{} {}", "error:".red(), e);
+        Ok(())
+    }
+
+    async fn handle_model_selection(&mut self) -> Result<(), Box<dyn Error>> {
+        // Show preset options first
+        println!("\n{}", "📋 Model Selection".cyan().bold());
+        println!("Choose an option:");
+        println!("  1. Browse all models (fetched from API)");
+        println!("  2. Use preset: Programming (optimized for code)");
+        println!("  3. Use preset: Reasoning (advanced problem-solving)");
+        println!("  4. Use preset: Free (free-tier models only)");
+        println!();
+
+        let choice = self
+            .editor
+            .readline("Select option (1-4, default 1): ")
+            .unwrap_or_default();
+
+        match choice.trim() {
+            "2" => {
+                let models = crate::available_models::get_preset_models("programming");
+                return self.select_from_preset_models("Programming", models);
+            }
+            "3" => {
+                let models = crate::available_models::get_preset_models("reasoning");
+                return self.select_from_preset_models("Reasoning", models);
+            }
+            "4" => {
+                let models = crate::available_models::get_preset_models("free");
+                return self.select_from_preset_models("Free", models);
+            }
+            _ => {
+                // Continue with API fetch (option 1 or default)
+            }
+        }
+
+        // Fetch models from API (already in async context, no need for new runtime)
+        let models_result =
+            crate::available_models::fetch_models_from_api(&self.ai_client.get_client()).await;
+
+        match models_result {
+            Ok(api_models) => {
+                // Separate free and paid models
+                let mut free_models: Vec<_> = api_models
+                    .iter()
+                    .filter(|m| crate::available_models::is_free_model(m))
+                    .collect();
+                let mut paid_models: Vec<_> = api_models
+                    .iter()
+                    .filter(|m| !crate::available_models::is_free_model(m))
+                    .collect();
+
+                // Sort by name
+                free_models.sort_by(|a, b| a.name.cmp(&b.name));
+                paid_models.sort_by(|a, b| a.name.cmp(&b.name));
+
+                println!("\n{}", "🆓 FREE MODELS:".green().bold());
+                for (i, m) in free_models.iter().enumerate() {
+                    println!("  {}. {} ({})", i + 1, m.name.green(), m.id.cyan());
+                }
+
+                println!("\n{}", "💰 PAID MODELS (Popular):".yellow().bold());
+                // Show only popular paid models (first 20)
+                for (i, m) in paid_models.iter().take(20).enumerate() {
+                    println!(
+                        "  {}. {} ({})",
+                        free_models.len() + i + 1,
+                        m.name.yellow(),
+                        m.id.cyan()
+                    );
+                }
+
+                println!(
+                    "\n{} {} paid models available",
+                    "ℹ️".cyan(),
+                    paid_models.len()
+                );
+
+                let input = self
+                    .editor
+                    .readline("Select model by number or ID (Enter to cancel): ")
+                    .unwrap_or_default();
+                let selection = input.trim();
+
+                if !selection.is_empty() {
+                    let all_models: Vec<_> = free_models
+                        .iter()
+                        .chain(paid_models.iter().take(20))
+                        .collect();
+
+                    let selected = if let Ok(idx) = selection.parse::<usize>() {
+                        all_models.get(idx.saturating_sub(1)).map(|m| m.id.as_str())
+                    } else {
+                        // Search by ID or name
+                        api_models
+                            .iter()
+                            .find(|m| m.id.contains(selection) || m.name.contains(selection))
+                            .map(|m| m.id.as_str())
+                    };
+
+                    if let Some(model_id) = selected {
+                        if let Err(e) = self.set_model(model_id) {
+                            eprintln!("{} {}", "error:".red(), e);
+                        }
+                    } else {
+                        eprintln!("{} Model not found", "error:".red());
+                    }
+                }
+            }
+            Err(_) => {
+                // Fallback to static list if API fails
+                println!(
+                    "{}",
+                    "⚠️  Using fallback model list (API unavailable)".yellow()
+                );
+                let models = list_available_models();
+
+                println!("\n{}", "Available AI models:".cyan().bold());
+                for (i, m) in models.iter().enumerate() {
+                    let display = if m.contains(":free") {
+                        format!("{}. {} {}", i + 1, m, "🆓".green())
+                    } else {
+                        format!("{}. {}", i + 1, m)
+                    };
+                    println!("  {}", display);
+                }
+
+                let input = self
+                    .editor
+                    .readline("Select model by number or name (Enter to cancel): ")
+                    .unwrap_or_default();
+                let model = input.trim();
+
+                if !model.is_empty() {
+                    let selected = if let Ok(idx) = model.parse::<usize>() {
+                        models
+                            .get(idx.saturating_sub(1))
+                            .copied()
+                            .unwrap_or(models[0])
+                    } else {
+                        models
+                            .iter()
+                            .find(|m| m.starts_with(model))
+                            .copied()
+                            .unwrap_or(models[0])
+                    };
+
+                    if let Err(e) = self.set_model(selected) {
+                        eprintln!("{} {}", "error:".red(), e);
+                    }
+                }
             }
         }
 
@@ -320,6 +582,39 @@ impl NexSh {
 
     pub async fn run(&mut self) -> Result<(), Box<dyn Error>> {
         println!("🤖 Welcome to NexSh!");
+
+        // Check if API key is configured on startup
+        if self.config_manager.config.api_key.is_empty() {
+            println!("{}", "⚠️  No API key configured!".yellow());
+            println!(
+                "{}",
+                "Please configure your OpenRouter API key to get started.".yellow()
+            );
+            println!(
+                "{}",
+                "Get your API key from: https://openrouter.ai/keys".cyan()
+            );
+            println!();
+
+            // Prompt user to run init
+            let input = self
+                .editor
+                .readline("Would you like to configure now? (Y/n): ")?;
+
+            if input.trim().to_lowercase() != "n" {
+                self.initialize()?;
+                // Update AI client with new API key
+                self.ai_client = AIClient::new(
+                    self.config_manager.config.api_key.clone(),
+                    self.config_manager.config.model.clone(),
+                )?;
+            } else {
+                println!(
+                    "{}",
+                    "You can run 'init' command anytime to configure.".cyan()
+                );
+            }
+        }
 
         loop {
             let prompt = PromptBuilder::create_shell_prompt()?;
@@ -336,8 +631,27 @@ impl NexSh {
                         "clear" => self.clear_context()?,
                         "init" => self.initialize()?,
                         "help" => self.print_help()?,
+                        "verbose" | "verbose on" => {
+                            self.config_manager.update_config(|config| {
+                                config.verbose = true;
+                            })?;
+                            println!(
+                                "{}",
+                                "✅ Verbose mode enabled - will show all thoughts and actions"
+                                    .green()
+                            );
+                        }
+                        "verbose off" => {
+                            self.config_manager.update_config(|config| {
+                                config.verbose = false;
+                            })?;
+                            println!(
+                                "{}",
+                                "✅ Verbose mode disabled - will show only final answers".green()
+                            );
+                        }
                         "models" => {
-                            self.handle_model_selection()?;
+                            self.handle_model_selection().await?;
                             continue;
                         }
                         _ => {

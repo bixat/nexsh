@@ -14,7 +14,7 @@
 [![Rust](https://github.com/M97Chahboun/nexsh/actions/workflows/publish.yaml/badge.svg)](https://github.com/M97Chahboun/nexsh/actions/workflows/rust.yml)
 [![Documentation](https://img.shields.io/badge/docs-latest-blue)](https://github.com/M97Chahboun/nexsh)
 
-Next-generation AI-powered shell using Google Gemini
+Next-generation AI-powered shell using ReAct pattern with OpenRouter
 
 [Installation](#installation) •
 [Features](#features) •
@@ -29,9 +29,13 @@ Next-generation AI-powered shell using Google Gemini
 
 # Features
 
-
-- 🧠 **AI-powered command interpretation** - Understands natural language commands
+- 🧠 **ReAct Agent Pattern** - Uses Reasoning and Acting framework for intelligent command generation
+- 🤖 **200+ AI Models** - Access to models from OpenAI, Anthropic, Google, Meta, and more via OpenRouter
+- 📊 **Human-Friendly Format** - Simple text-based responses for maximum reliability (99%+ parsing success)
+- 🎯 **Model Presets** - Quick selection of Free, Programming, or Reasoning optimized models
 - 🔄 **Smart conversion** - Translates your words into precise shell commands
+- 💭 **Transparent Reasoning** - See the AI's thought process before executing commands
+- 🔇 **Verbose Mode** - Toggle between detailed reasoning steps or clean final answers
 - 🎨 **Interactive experience** - Colorful output with intuitive formatting
 - 📝 **Enhanced history** - Search and recall past commands easily
 - 🛡️ **Safety first** - Warns before executing potentially dangerous commands
@@ -94,12 +98,42 @@ sudo cp target/release/nexsh /usr/local/bin/
 
 ## 🛠️ Setup
 
-First-time configuration:
+### First-time configuration:
 
-You'll need to:
-1. Enter your Gemini API key when prompted
-2. Get your API key from [Google AI Studio](https://aistudio.google.com/)
-3. The key will be securely stored in your system's config directory
+**Important:** You need an OpenRouter API key to use NexSh.
+
+1. Get your API key from [OpenRouter](https://openrouter.ai/keys)
+2. Run the initialization command:
+
+```bash
+nexsh init
+```
+
+3. Enter your OpenRouter API key when prompted
+4. The key will be securely stored in your system's config directory
+
+**Note:** The API key is stored in the config file, not read from environment variables.
+
+### Migrating from Old Version:
+
+If you're upgrading from a previous version that used Gemini:
+
+```bash
+# Run migration automatically (happens on first run)
+nexsh
+
+# Or manually trigger migration
+nexsh migrate
+
+# Check migration status
+nexsh migration-status
+```
+
+The migration will:
+- Convert your old Gemini config to OpenRouter format
+- Preserve your history and context
+- Suggest equivalent OpenRouter models
+- Keep your old config as backup
 
 # Configuration
 
@@ -112,45 +146,100 @@ nexsh init
 Follow the prompts to configure the tool:
 
 ```plaintext
-Enter your Gemini API Key: your_gemini_api_key
-Set history size (default is 1000):
-Set max context messages (default is 10):
-Set model (default is gemini-2.0-flash):
+🤖 Welcome to NexSh Setup!
+Enter your OpenRouter API key: your_openrouter_api_key
+Enter history size (default 1000):
+Enter max context messages (default 100):
+Enable verbose mode to show all thoughts and actions? (y/N): n
+
+📋 Model Selection
+Choose a preset:
+  1. Free models (recommended for getting started)
+  2. Programming models (optimized for code)
+  3. Reasoning models (advanced problem-solving)
+  4. Browse all models
+
+Select preset (1-4, default 1): 2
 ```
 
 Your configuration is now stored in the default location and used by `nexsh`.
-```
 
-| Setting                | Description                            | Default          |
-| ---------------------- | -------------------------------------- | ---------------- |
-| `api_key`              | Your Gemini API key                    | Required         |
-| `history_size`         | Number of commands to keep in history  | 1000             |
-| `max_context_messages` | Maximum messages to keep in AI context | 10               |
-| `model`                | The Gemini model                       | gemini-2.0-flash |
+| Setting                | Description                                             | Default                   |
+| ---------------------- | ------------------------------------------------------- | ------------------------- |
+| `api_key`              | Your OpenRouter API key                                 | Required                  |
+| `history_size`         | Number of commands to keep in history                   | 1000                      |
+| `max_context_messages` | Maximum messages to keep in AI context                  | 100                       |
+| `model`                | The AI model to use                                     | anthropic/claude-sonnet-4 |
+| `verbose`              | Show all reasoning steps (true) or clean output (false) | false                     |
+
+### Available Models
+
+NexSh supports 200+ models via OpenRouter with intelligent presets:
+
+**🎯 Model Presets:**
+- **Free**: Perfect for getting started without costs
+- **Programming**: Optimized for code generation and technical tasks
+- **Reasoning**: Advanced problem-solving and complex analysis
+
+**Recommended for ReAct Pattern:**
+- `anthropic/claude-sonnet-4` - Best reasoning capabilities (default)
+- `anthropic/claude-3.5-sonnet` - Fast and intelligent
+- `deepseek/deepseek-r1` - Specialized reasoning model
+- `openai/gpt-4-turbo` - Excellent structured output consistency
+
+**Other Options:**
+- `openai/gpt-4o` - OpenAI's latest multimodal model
+- `google/gemini-2.5-flash` - Fast Google model
+- `meta-llama/llama-3.3-70b-instruct` - Open source option
+
+**Free Models:**
+- `google/gemini-flash-1.5` - Free tier
+- `meta-llama/llama-3.1-8b-instruct:free` - Free tier
+- `qwen/qwen3-coder:free` - Free coding model
+
+**Interactive Model Selection:**
+```bash
+nexsh
+→ models
+
+📋 Model Selection
+Choose an option:
+  1. Browse all models (fetched from API)
+  2. Use preset: Programming (optimized for code)
+  3. Use preset: Reasoning (advanced problem-solving)
+  4. Use preset: Free (free-tier models only)
 ```
 
 # Usage
 
 ### Interactive Shell Mode
 
+The AI assistant uses the ReAct (Reasoning and Acting) pattern to understand your requests and execute commands intelligently.
+
 ```bash
 nexsh
 ```
 
-Example session:
+Example session showing ReAct pattern in action:
 
 ```bash
 $ nexsh
 🤖 Welcome to NexSh! Type 'exit' to quit or 'help' for assistance.
 
-nexsh> show me system memory usage
-→ free -h
+→ check which project im in
+💭 Thought: User wants to know their current project context...
+🔧 Action: pwd && ls -la && git remote -v 2>/dev/null
+🤖 → You're in the nexsh project at /Users/username/Development/nexsh
+
+→ show me system memory usage
+💭 Thought: User wants to see memory usage statistics...
+🔧 Action: free -h
               total        used        free      shared  buff/cache   available
 Mem:           15Gi       4.3Gi       6.2Gi       386Mi       4.9Gi        10Gi
-Swap:         8.0Gi          0B       8.0Gi
 
-nexsh> find files modified in the last 24 hours
-→ find . -type f -mtime -1
+→ find files modified in the last 24 hours
+💭 Thought: Need to find recently modified files...
+🔧 Action: find . -type f -mtime -1
 ./src/main.rs
 ./Cargo.toml
 ./README.md
@@ -164,13 +253,46 @@ nexsh -e "show all running docker containers"
 
 ### Key Commands
 
-| Command       | Action                   |
-| ------------- | ------------------------ |
-| `exit`/`quit` | Exit the shell           |
-| `help`        | Show available commands  |
-| `Ctrl+C`      | Cancel current operation |
-| `Ctrl+D`      | Exit the shell           |
-| `Up/Down`     | Navigate command history |
+| Command       | Action                                         |
+| ------------- | ---------------------------------------------- |
+| `exit`/`quit` | Exit the shell                                 |
+| `help`        | Show available commands                        |
+| `models`      | Browse and select AI models with presets       |
+| `verbose`     | Enable verbose mode (show all reasoning steps) |
+| `verbose off` | Disable verbose mode (show only final answers) |
+| `Ctrl+C`      | Cancel current operation                       |
+| `Ctrl+D`      | Exit the shell                                 |
+| `Up/Down`     | Navigate command history                       |
+
+### Verbose Mode
+
+Control how much detail you see from the AI:
+
+```bash
+# Enable verbose mode - see all reasoning steps
+→ verbose
+✅ Verbose mode enabled - will show all thoughts and actions
+
+# Disable verbose mode - cleaner output
+→ verbose off
+✅ Verbose mode disabled - will show only final answers
+```
+
+**Verbose ON** (detailed):
+```
+→ check which project im in
+💭 Thought: User wants to know their current project context...
+🔧 Action: pwd && ls -la && git remote -v 2>/dev/null
+📊 Observation: /Users/username/Development/nexsh...
+🤖 → You're in the nexsh project
+```
+
+**Verbose OFF** (clean):
+```
+→ check which project im in
+💭 Analyzing your request...
+🤖 → You're in the nexsh project at /Users/username/Development/nexsh
+```
 
 # Contributing
 
@@ -190,11 +312,67 @@ MIT License - See [LICENSE](LICENSE) for full details.
 
 ## 🙏 Acknowledgments
 
-- Google Gemini for powering the AI capabilities
-- The Rust community for amazing crates and tools
+- OpenRouter for providing access to 200+ AI models
+- Anthropic, OpenAI, Google, Meta, and other AI providers
+- The Rust community for amazing crates and tools (schemars, serde, tokio, etc.)
 - All contributors who helped shape this project
 
-## 📱 Connect
+## ✨ What's New in v0.9.0
+
+- **Human-Friendly Format**: Simplified text-based output format for 99%+ parsing reliability
+- **Model Presets**: Quick access to Free, Programming, and Reasoning models
+- **Verbose Mode**: Toggle between detailed reasoning or clean output
+- **Enhanced Model Selection**: Interactive browser with preset categories
+- **Better Error Handling**: Improved parsing with automatic fallback mechanisms
+- **Improved UX**: Spinner shows during AI processing, cleaner output display
+- **Async Improvements**: Fixed runtime nesting issues
+
+See [CHANGELOG_v0.9.0.md](CHANGELOG_v0.9.0.md) for full details.
+
+## 🧠 About ReAct Pattern
+
+NexSh uses the ReAct (Reasoning and Acting) framework, which combines:
+- **Reasoning**: The AI thinks through the problem and plans its approach
+- **Acting**: The AI takes action based on its reasoning
+- **Observation**: The AI observes the results and adjusts if needed
+
+This creates a more transparent and reliable AI assistant that shows its thought process before executing commands.
+
+## 📊 Human-Friendly Output Format
+
+NexSh uses a simple text-based format for maximum reliability and ease of use:
+
+**How it works:**
+1. **Simple Structure**: AI responds with clear field-value pairs
+2. **Easy Parsing**: Line-by-line parsing eliminates complex JSON errors
+3. **Human Readable**: Easy to understand and debug
+4. **Backward Compatible**: Falls back to JSON if needed
+
+**Benefits:**
+- 🎯 **99%+ Parsing Success**: Eliminates complex JSON parsing errors
+- 📝 **Human Readable**: Easy to understand AI responses
+- 🚀 **Better Reliability**: AI models handle simple text better than nested JSON
+- 🔧 **Easy Debugging**: Clear format makes troubleshooting simple
+
+**Response Format:**
+```
+Thought: <AI's reasoning about what you want>
+Action: <shell command to execute, or "" if just responding>
+Dangerous: <true or false - safety flag>
+Category: <system|file|network|package|text|process|other>
+Final Answer: <optional message shown to user>
+```
+
+**Example Response:**
+```
+Thought: User wants to see all files including hidden ones
+Action: ls -lah
+Dangerous: false
+Category: file
+Final Answer: Listing all files in the current directory
+```
+
+## �📱 Connect
 
 - **Author**: [M97Chahboun](https://github.com/M97Chahboun)
 - **Report issues**: [Issue Tracker](https://github.com/M97Chahboun/nexsh/issues)

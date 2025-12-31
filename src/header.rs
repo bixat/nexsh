@@ -33,11 +33,15 @@ pub fn print_header() {
             .bright_black()
     );
     println!("{}", "━".repeat(65).bright_blue());
-    println!("🤖 NexSh Help:");
-    println!("  - Type 'exit' or 'quit' to exit the shell.");
-    println!("  - Type any command to execute it.");
-    println!("  - Use 'init' to set up your API key.");
-    println!("  - Use 'clear' to clear conversation context.");
+     println!("🤖 NexSh Help:");
+        println!("  - Type 'exit' or 'quit' to exit the shell.");
+        println!("  - Type any command to execute it.");
+        println!("  - Use 'init' to set up your API key.");
+        println!("  - Use 'clear' to clear conversation context.");
+        println!("  - Type 'models' to browse all models or select from presets (programming, reasoning, free).");
+        println!("  - Use 'verbose' or 'verbose on' to show all thoughts and actions.");
+        println!("  - Use 'verbose off' to show only final answers (default).");
+        println!("  - NexSh uses ReAct (Reasoning and Acting) pattern for intelligent command generation.");
 
     println!(
         "\n{} Type {} for help or {} to exit",
