@@ -16,10 +16,16 @@ pub struct NexShConfig {
     pub model: Option<String>,
     #[serde(default = "default_verbose")]
     pub verbose: bool,
+    #[serde(default = "default_max_iterations")]
+    pub max_iterations: usize,
 }
 
 fn default_verbose() -> bool {
     false
+}
+
+fn default_max_iterations() -> usize {
+    10 // Default to 10 iterations to prevent infinite loops
 }
 
 #[derive(Debug, Deserialize)]

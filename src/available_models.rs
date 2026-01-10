@@ -20,6 +20,7 @@ pub fn list_available_models() -> Vec<&'static str> {
     vec![
         // FREE MODELS (🆓)
         "qwen/qwen3-coder:free",            // Qwen Coder - Free coding model
+        "qwen/qwen3-235b-a22b-2507:free",   // Qwen 235B
         "google/gemini-2.0-flash-exp:free", // Google Gemini 2.0 Flash
         "google/gemini-flash-1.5:free",     // Google Gemini 1.5 Flash
         "meta-llama/llama-3.1-8b-instruct:free", // Meta Llama 3.1 8B

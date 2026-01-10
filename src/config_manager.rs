@@ -65,6 +65,10 @@ impl ConfigManager {
                 .get("verbose")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false),
+            max_iterations: parsed
+                .get("max_iterations")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(10) as usize,
         })
     }
 

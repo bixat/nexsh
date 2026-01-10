@@ -122,8 +122,7 @@ impl MigrationManager {
         println!("{}", "✅ Migration completed successfully!".green());
         println!(
             "{}",
-            "⚠️  Note: Please update your API key to an OpenRouter key using 'nexsh init'"
-                .yellow()
+            "⚠️  Note: Please update your API key to an OpenRouter key using 'nexsh init'".yellow()
         );
 
         Ok(true)
@@ -152,9 +151,14 @@ impl MigrationManager {
         let mut state = self.load_migration_state()?;
 
         // Check if we need to migrate from Gemini
-        if !state.migrations_applied.contains(&"gemini_to_openrouter".to_string()) {
+        if !state
+            .migrations_applied
+            .contains(&"gemini_to_openrouter".to_string())
+        {
             if self.migrate_gemini_to_openrouter()? {
-                state.migrations_applied.push("gemini_to_openrouter".to_string());
+                state
+                    .migrations_applied
+                    .push("gemini_to_openrouter".to_string());
                 state.last_migration_date = std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap()
@@ -166,4 +170,3 @@ impl MigrationManager {
         Ok(())
     }
 }
-

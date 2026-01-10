@@ -40,7 +40,10 @@ impl ReActAgent {
             }
 
             // Get AI response (Thought + Action)
-            let response = self.ai_client.process_command_request(input, messages).await?;
+            let response = self
+                .ai_client
+                .process_command_request(input, messages)
+                .await?;
 
             // Display thought process
             self.display_thought(&response);
@@ -133,4 +136,3 @@ impl ReActAgent {
         }
     }
 }
-

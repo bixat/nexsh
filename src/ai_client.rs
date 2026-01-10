@@ -1,5 +1,5 @@
 use crate::{
-    prompt::{SYSTEM_PROMPT},
+    prompt::SYSTEM_PROMPT,
     types::{ActionType, GeminiResponse, Message, ReActResponse},
 };
 use colored::Colorize;
@@ -49,23 +49,70 @@ impl AIClient {
         let mut category = String::from("other");
         let mut final_answer = String::new();
 
-        for line in content.lines() {
-            let line = line.trim();
-            if line.is_empty() {
-                continue;
-            }
+        let mut action_lines = Vec::new();
+        let mut final_answer_lines = Vec::new();
+        let mut in_action = false;
+        let mut in_final_answer = false;
 
-            if let Some(value) = line.strip_prefix("Thought:") {
-                thought = value.trim().to_string();
-            } else if let Some(value) = line.strip_prefix("Action:") {
-                action = value.trim().trim_matches('"').to_string();
-            } else if let Some(value) = line.strip_prefix("Dangerous:") {
-                dangerous = value.trim().eq_ignore_ascii_case("true");
-            } else if let Some(value) = line.strip_prefix("Category:") {
-                category = value.trim().to_string();
-            } else if let Some(value) = line.strip_prefix("Final Answer:") {
-                final_answer = value.trim().to_string();
+        for line in content.lines() {
+            let trimmed = line.trim();
+
+            // Check if this line starts a new field
+            if trimmed.starts_with("Thought:") {
+                in_action = false;
+                in_final_answer = false;
+                if let Some(value) = trimmed.strip_prefix("Thought:") {
+                    thought = value.trim().to_string();
+                }
+            } else if trimmed.starts_with("Action:") {
+                in_action = true;
+                in_final_answer = false;
+                action_lines.clear();
+                if let Some(value) = trimmed.strip_prefix("Action:") {
+                    let val = value.trim().trim_matches('"');
+                    if !val.is_empty() {
+                        action_lines.push(val.to_string());
+                    }
+                }
+            } else if trimmed.starts_with("Dangerous:") {
+                in_action = false;
+                in_final_answer = false;
+                if let Some(value) = trimmed.strip_prefix("Dangerous:") {
+                    dangerous = value.trim().eq_ignore_ascii_case("true");
+                }
+            } else if trimmed.starts_with("Category:") {
+                in_action = false;
+                in_final_answer = false;
+                if let Some(value) = trimmed.strip_prefix("Category:") {
+                    category = value.trim().to_string();
+                }
+            } else if trimmed.starts_with("Final Answer:") {
+                in_action = false;
+                in_final_answer = true;
+                final_answer_lines.clear();
+                if let Some(value) = trimmed.strip_prefix("Final Answer:") {
+                    let val = value.trim();
+                    if !val.is_empty() {
+                        final_answer_lines.push(val.to_string());
+                    }
+                }
+            } else if in_action && !trimmed.is_empty() {
+                // Continue collecting action lines until we hit another field
+                action_lines.push(trimmed.to_string());
+            } else if in_final_answer {
+                // Continue collecting final answer lines (including empty lines for formatting)
+                final_answer_lines.push(line.to_string());
             }
+        }
+
+        // Join action lines with newlines to preserve multiline commands
+        if !action_lines.is_empty() {
+            action = action_lines.join("\n");
+        }
+
+        // Join final answer lines with newlines to preserve formatting
+        if !final_answer_lines.is_empty() {
+            final_answer = final_answer_lines.join("\n");
         }
 
         // Validate that we have at least a thought
@@ -95,7 +142,15 @@ impl AIClient {
         messages: &[Message],
     ) -> Result<GeminiResponse, Box<dyn Error>> {
         let os = std::env::consts::OS.to_string();
-        let system_prompt = SYSTEM_PROMPT.replace("{OS}", &os);
+        let cwd = std::env::current_dir()
+            .map(|p| p.display().to_string())
+            .unwrap_or_else(|_| "unknown".to_string());
+        let shell = std::env::var("SHELL").unwrap_or_else(|_| "sh".to_string());
+
+        let system_prompt = SYSTEM_PROMPT
+            .replace("{OS}", &os)
+            .replace("{CWD}", &cwd)
+            .replace("{SHELL}", &shell);
 
         // Convert messages to OpenRouter format
         let mut openrouter_messages = vec![OpenRouterMessage::new(Role::System, &system_prompt)];
@@ -112,25 +167,29 @@ impl AIClient {
         }
 
         // Add format reminder as a separate system message for better attention
-        let format_reminder = r#"RESPONSE FORMAT REMINDER:
-Use this EXACT format for your response:
+        let format_reminder = r#"RESPONSE FORMAT - Use this EXACT structure:
 
-Thought: <your reasoning>
-Action: <command or "">
+Thought: <brief reasoning about the task and your approach>
+Action: <shell command to run, OR "" if providing final answer>
 Dangerous: <true or false>
 Category: <system|file|network|package|text|process|other>
-Final Answer: <optional message>
+Final Answer: <message for the user - required when Action is "">
 
-Each field on its own line. No extra text before or after."#;
+IMPORTANT GUIDELINES:
+- For SIMPLE tasks: Execute immediately, be concise
+- For COMPLEX tasks: Break into steps, execute one command per iteration
+- If a command FAILS: Try an alternative approach, don't repeat the same command
+- After gathering enough info: Set Action to "" and provide Final Answer
+- Each field MUST be on its own line, starting with the field name and colon"#;
 
         openrouter_messages.push(OpenRouterMessage::new(Role::System, format_reminder));
 
-        // Build the request with low temperature for consistent output
+        // Build the request with balanced temperature
         let request = ChatCompletionRequest::builder()
             .model(&self.model)
             .messages(openrouter_messages)
-            .temperature(0.2) // Low temperature for consistent structured output
-            .max_tokens(2000)
+            .temperature(0.3) // Slightly higher for better reasoning
+            .max_tokens(2500) // Increased for complex responses
             .build()?;
 
         // Send request

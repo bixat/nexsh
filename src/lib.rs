@@ -17,7 +17,6 @@ use crate::{
 
 // Export modules
 pub mod ai_client;
-pub mod ai_request_builder;
 pub mod available_models;
 pub mod command_executor;
 pub mod config_manager;
@@ -26,6 +25,7 @@ pub mod migration;
 pub mod prompt;
 pub mod react_agent;
 pub mod react_loop;
+pub mod tools;
 pub mod types;
 pub mod ui_progress;
 pub mod ui_prompt_builder;
@@ -38,6 +38,7 @@ impl Default for NexShConfig {
             max_context_messages: 100,
             model: Some("anthropic/claude-sonnet-4".to_string()),
             verbose: false,
+            max_iterations: 10,
         }
     }
 }
@@ -79,13 +80,16 @@ impl NexSh {
         // Load existing messages from context
         let messages = context_manager.load_context().unwrap_or_default();
 
+        // Create ReActLoop with configured max_iterations
+        let react_loop = ReActLoop::new(config_manager.config.max_iterations);
+
         Ok(Self {
             config_manager,
             ai_client,
             command_executor: CommandExecutor::new(),
             context_manager,
             progress_manager: ProgressManager::new(),
-            react_loop: ReActLoop::default(),
+            react_loop,
             messages,
             editor,
         })
@@ -101,6 +105,74 @@ impl NexSh {
         self.ai_client.set_model(model.to_string());
 
         println!("✅ AI model set to: {}", model.green());
+        Ok(())
+    }
+
+    pub fn show_config(&self) -> Result<(), Box<dyn Error>> {
+        println!("\n{}", "⚙️  Current Configuration".cyan().bold());
+        println!("{}", "─".repeat(50).dimmed());
+
+        let config = &self.config_manager.config;
+
+        // API Key (masked)
+        let api_key_display = if config.api_key.is_empty() {
+            "Not configured".red().to_string()
+        } else {
+            format!(
+                "{}...{}",
+                &config.api_key[..8.min(config.api_key.len())],
+                if config.api_key.len() > 8 { "****" } else { "" }
+            )
+            .green()
+            .to_string()
+        };
+        println!("  {}: {}", "API Key".cyan(), api_key_display);
+
+        // Model
+        let model_display = config.model.as_deref().unwrap_or("Not set");
+        println!("  {}: {}", "Model".cyan(), model_display.green());
+
+        // Max iterations
+        println!(
+            "  {}: {}",
+            "Max Iterations".cyan(),
+            config.max_iterations.to_string().green()
+        );
+
+        // History size
+        println!(
+            "  {}: {}",
+            "History Size".cyan(),
+            config.history_size.to_string().green()
+        );
+
+        // Max context messages
+        println!(
+            "  {}: {}",
+            "Max Context Messages".cyan(),
+            config.max_context_messages.to_string().green()
+        );
+
+        // Verbose mode
+        let verbose_display = if config.verbose {
+            "Enabled".green()
+        } else {
+            "Disabled".dimmed()
+        };
+        println!("  {}: {}", "Verbose Mode".cyan(), verbose_display);
+
+        println!("{}", "─".repeat(50).dimmed());
+        println!(
+            "\n{}",
+            "💡 Tip: Use 'set max_iterations <number>' to change max iterations".dimmed()
+        );
+        println!(
+            "{}",
+            "💡 Tip: Use 'verbose on/off' to toggle verbose mode".dimmed()
+        );
+        println!("{}", "💡 Tip: Use 'models' to change AI model".dimmed());
+        println!();
+
         Ok(())
     }
 
@@ -253,13 +325,9 @@ impl NexSh {
             .add_message(&mut self.messages, "user", input)?;
 
         // Create progress indicator
-        let pb = if self.config_manager.config.verbose {
-            self.progress_manager
-                .create_spinner("🔄 Starting ReAct loop...".cyan().to_string())
-        } else {
-            self.progress_manager
-                .create_spinner("💭 Thinking...".cyan().to_string())
-        };
+        let pb = self
+            .progress_manager
+            .create_spinner("💭 Thinking...".cyan().to_string());
 
         // Run the ReAct loop (multiple iterations of Think → Act → Observe)
         let result = self
@@ -366,15 +434,54 @@ impl NexSh {
     }
 
     pub fn print_help(&self) -> Result<(), Box<dyn Error>> {
-        println!("🤖 NexSh Help:");
-        println!("  - Type 'exit' or 'quit' to exit the shell.");
-        println!("  - Type any command to execute it.");
-        println!("  - Use 'init' to set up your API key.");
-        println!("  - Use 'clear' to clear conversation context.");
-        println!("  - Type 'models' to browse all models or select from presets (programming, reasoning, free).");
-        println!("  - Use 'verbose' or 'verbose on' to show all thoughts and actions.");
-        println!("  - Use 'verbose off' to show only final answers (default).");
-        println!("  - NexSh uses ReAct (Reasoning and Acting) pattern for intelligent command generation.");
+        println!("\n{}", "🤖 NexSh Help".cyan().bold());
+        println!("{}", "─".repeat(60).dimmed());
+
+        println!("\n{}", "Basic Commands:".green().bold());
+        println!("  {} - Exit the shell", "exit/quit".cyan());
+        println!("  {} - Set up your API key", "init".cyan());
+        println!("  {} - Clear conversation context", "clear".cyan());
+        println!("  {} - Show this help message", "help".cyan());
+
+        println!("\n{}", "Configuration:".green().bold());
+        println!("  {} - Show current configuration", "config".cyan());
+        println!("  {} - Change AI model", "models".cyan());
+        println!(
+            "  {} - Set max ReAct iterations (default: 10)",
+            "set max_iterations <number>".cyan()
+        );
+        println!("  {} - Enable verbose mode", "verbose on".cyan());
+        println!("  {} - Disable verbose mode", "verbose off".cyan());
+
+        println!("\n{}", "Built-in Tools:".green().bold());
+        println!("  {} - Read file contents", "read_file <path>".cyan());
+        println!("  {} - Write to file", "write_file <path> <content>".cyan());
+        println!("  {} - List directory contents", "list_files [path]".cyan());
+        println!("  {} - Delete file", "delete_file <path>".cyan());
+        println!("  {} - Create directory", "create_directory <path>".cyan());
+        println!(
+            "  {} - Find files by pattern",
+            "find_files [dir] <pattern>".cyan()
+        );
+        println!("  {} - Copy file", "copy_file <from> <to>".cyan());
+        println!("  {} - Move/rename file", "move_file <from> <to>".cyan());
+        println!("  {} - Get file info", "file_info <path>".cyan());
+
+        println!("\n{}", "Shell Commands:".green().bold());
+        println!("  - Type any shell command directly (e.g., 'ls -la', 'grep pattern file.txt')");
+        println!("  - Or use: {} <command>", "run".cyan());
+
+        println!("\n{}", "How it works:".green().bold());
+        println!("  - NexSh uses the ReAct (Reasoning and Acting) pattern");
+        println!("  - The AI thinks, acts, observes, and repeats until task completion");
+        println!(
+            "  - Max iterations: {} (configurable)",
+            self.config_manager
+                .config
+                .max_iterations
+                .to_string()
+                .yellow()
+        );
 
         let verbose_status = if self.config_manager.config.verbose {
             "enabled".green()
@@ -386,6 +493,8 @@ impl NexSh {
             "ℹ️".cyan(),
             verbose_status
         );
+        println!("{}", "─".repeat(60).dimmed());
+        println!();
 
         Ok(())
     }
@@ -631,6 +740,7 @@ impl NexSh {
                         "clear" => self.clear_context()?,
                         "init" => self.initialize()?,
                         "help" => self.print_help()?,
+                        "config" => self.show_config()?,
                         "verbose" | "verbose on" => {
                             self.config_manager.update_config(|config| {
                                 config.verbose = true;
@@ -655,6 +765,31 @@ impl NexSh {
                             continue;
                         }
                         _ => {
+                            // Check for config set commands
+                            if input.starts_with("set max_iterations ") {
+                                if let Some(value_str) = input.strip_prefix("set max_iterations ") {
+                                    if let Ok(value) = value_str.parse::<usize>() {
+                                        self.config_manager.update_config(|config| {
+                                            config.max_iterations = value;
+                                        })?;
+                                        // Update the react_loop with new value
+                                        self.react_loop = ReActLoop::new(value);
+                                        println!(
+                                            "✅ max_iterations set to: {}",
+                                            value.to_string().green()
+                                        );
+                                    } else {
+                                        eprintln!("{} Invalid number", "error:".red());
+                                    }
+                                } else {
+                                    eprintln!(
+                                        "{} Usage: set max_iterations <number>",
+                                        "error:".red()
+                                    );
+                                }
+                                continue;
+                            }
+
                             if let Err(e) = self.process_command(input).await {
                                 eprintln!("{} {}", "error:".red(), e);
                             }
