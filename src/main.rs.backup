@@ -22,8 +22,6 @@ struct Args {
 
 #[derive(Subcommand, Debug)]
 enum Commands {
-    /// Initialize NexSh configuration (API key, model, etc.)
-    Init,
     /// Run migrations from old Gemini config to new OpenRouter config
     Migrate,
     /// Show migration status
@@ -70,16 +68,6 @@ async fn handle_subcommand(command: Commands) -> Result<(), Box<dyn Error>> {
     use nexsh::migration::MigrationManager;
 
     match command {
-        Commands::Init => {
-            println!("{}", "🔧 Initializing NexSh...".cyan());
-            let mut shell = NexSh::new()?;
-            shell.initialize()?;
-            println!("{}", "✅ Initialization completed!".green());
-            println!(
-                "{}",
-                "You can now run 'nexsh' to start using the shell.".cyan()
-            );
-        }
         Commands::Migrate => {
             println!("{}", "🔄 Running migrations...".cyan());
             let migration_manager = MigrationManager::new()?;

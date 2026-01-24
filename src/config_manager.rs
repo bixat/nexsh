@@ -13,7 +13,8 @@ pub struct ConfigManager {
 
 impl ConfigManager {
     pub fn new() -> Result<Self, Box<dyn Error>> {
-        let proj_dirs = ProjectDirs::from("com", "gemini-shell", "nexsh")
+        // Use new directory structure
+        let proj_dirs = ProjectDirs::from("com", "nexsh", "nexsh")
             .ok_or("Failed to get project directories")?;
 
         let config_dir = proj_dirs.config_dir().to_path_buf();
@@ -59,7 +60,15 @@ impl ConfigManager {
                 .get("model")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string())
-                .or(Some("gemini-2.0-flash".to_string())),
+                .or(Some("anthropic/claude-sonnet-4".to_string())),
+            verbose: parsed
+                .get("verbose")
+                .and_then(|v| v.as_bool())
+                .unwrap_or(false),
+            max_iterations: parsed
+                .get("max_iterations")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(10) as usize,
         })
     }
 

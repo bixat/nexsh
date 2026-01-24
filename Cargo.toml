@@ -1,30 +1,57 @@
 [package]
 name = "nexsh"
-version = "0.8.2"
+version = "0.9.0"
 edition = "2021"
 authors = ["M97Chahboun"]
-description = "Next-generation AI-powered shell using Google Gemini"
+description = "Next-generation AI-powered shell using ReAct pattern with OpenRouter"
 license = "MIT"
 repository = "https://github.com/M97Chahboun/nexsh"
 documentation = "https://github.com/M97Chahboun/nexsh#readme"
 homepage = "https://github.com/M97Chahboun/nexsh"
-keywords = ["cli", "shell", "ai", "gemini", "terminal"]
+keywords = ["cli", "shell", "ai", "openrouter", "ReAct"]
 categories = ["command-line-utilities", "development-tools"]
 readme = "README.md"
-
 # Make sure binary name is correct
 [[bin]]
 name = "nexsh"
 path = "src/main.rs"
-
 [dependencies]
-gemini_client_rs = "0.4.0"
+# Async runtime for handling concurrent operations and async I/O
 tokio = { version = "1.0", features = ["full"] }
+# Serialization/deserialization framework for JSON and other formats
 serde = { version = "1.0", features = ["derive"] }
+# JSON serialization support for serde
 serde_json = "1.0"
+# Command-line argument parser with derive macros
 clap = { version = "4.4", features = ["derive"] }
+# Terminal text coloring and styling
 colored = "2.0"
+# Cross-platform user directories (config, cache, data)
 directories = "5.0"
+# Interactive command-line editor with history and completion
 rustyline = "12.0"
+# Date and time handling library
 chrono = "0.4"
+# Progress bars and spinners for terminal UI
 indicatif = "0.17.11"
+# OpenRouter API client for AI model interactions
+openrouter-rs = "0.4.6"
+# JSON Schema generation for data validation
+schemars = "0.8"
+# Error handling with context and chaining
+anyhow = "1.0"
+# Regular expression engine for pattern matching
+regex = "1.10"
+# UUID generation for unique identifiers
+uuid = { version = "1.0", features = ["v4"] }
+# Shell-style variable expansion (e.g., $HOME, ~)
+shellexpand = "3.1"
+# Unix system calls and POSIX APIs
+nix = "0.27"
+# Low-level C library bindings
+libc = "0.2"
+# Secure temporary file and directory creation
+tempfile = "3.8"
+[dev-dependencies]
+# Testing utilities for tokio async code
+tokio-test = "0.4"
